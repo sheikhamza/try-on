@@ -1,0 +1,2150 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>
+        Hamza Clothing - Virtual Try-On
+    </title>
+
+
+    <!-- =====================================================
+         TAILWIND CSS
+    ====================================================== -->
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+
+    <!-- =====================================================
+         MEDIAPIPE
+    ====================================================== -->
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js"></script>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+
+
+    <!-- =====================================================
+         CUSTOM CSS
+    ====================================================== -->
+
+    <style>
+
+        * {
+            box-sizing: border-box;
+        }
+
+
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+        }
+
+
+        /* =================================================
+           TRY-ON MODAL
+        ================================================== */
+
+        #tryOnModal {
+            display: none;
+        }
+
+
+        #tryOnModal.active {
+            display: flex;
+        }
+
+
+        /* =================================================
+           CAMERA STAGE
+        ================================================== */
+
+        #stage {
+
+            position: relative;
+
+            width: 100%;
+
+            max-width: 430px;
+
+            aspect-ratio: 3 / 4;
+
+            overflow: hidden;
+
+            background: #111;
+
+            border-radius: 28px;
+
+        }
+
+
+        /* =================================================
+           CAMERA VIDEO
+        ================================================== */
+
+        #video {
+
+            position: absolute;
+
+            inset: 0;
+
+            width: 100%;
+
+            height: 100%;
+
+            object-fit: cover;
+
+            /* Mirror front camera */
+
+            transform: scaleX(-1);
+
+        }
+
+
+        /* =================================================
+           CLOTHING OVERLAYS
+        ================================================== */
+
+        .garment {
+
+            position: absolute;
+
+            left: 50%;
+
+            top: 0;
+
+            width: 0;
+
+            height: auto;
+
+            opacity: 0;
+
+            pointer-events: none;
+
+            user-select: none;
+
+            -webkit-user-drag: none;
+
+            object-fit: fill;
+
+            transform: translateX(-50%);
+
+            transform-origin: center center;
+
+            will-change:
+                left,
+                top,
+                width,
+                height,
+                opacity;
+
+        }
+
+
+        /*
+           Layering
+        */
+
+        #shirtGarment {
+            z-index: 10;
+        }
+
+
+        #pantGarment {
+            z-index: 11;
+        }
+
+
+        /* =================================================
+           LOADER
+        ================================================== */
+
+        .loader {
+
+            width: 40px;
+
+            height: 40px;
+
+            border:
+                4px solid
+                rgba(255,255,255,.2);
+
+            border-top-color:
+                white;
+
+            border-radius: 50%;
+
+            animation:
+                spin .8s linear infinite;
+
+        }
+
+
+        @keyframes spin {
+
+            to {
+                transform:
+                    rotate(360deg);
+            }
+
+        }
+
+    </style>
+
+</head>
+
+
+<body class="bg-gray-50 text-gray-900">
+
+
+<!-- =========================================================
+     HEADER
+========================================================= -->
+
+<header
+    class="bg-white border-b sticky top-0 z-40"
+>
+
+    <div
+        class="max-w-6xl mx-auto px-5 py-5 flex items-center justify-between"
+    >
+
+        <h1 class="text-2xl font-bold">
+            Hamza Clothing
+        </h1>
+
+
+        <div class="text-sm text-gray-500">
+            Virtual Try-On
+        </div>
+
+    </div>
+
+</header>
+
+
+
+<!-- =========================================================
+     MAIN STORE
+========================================================= -->
+
+<main class="max-w-6xl mx-auto px-5 py-10">
+
+    <!-- =====================================================
+         HERO
+    ====================================================== -->
+    <section class="mb-10">
+        <p class="text-sm text-gray-500 mb-2">
+            NEW COLLECTION
+        </p>
+
+        <h2 class="text-4xl md:text-5xl font-bold mb-4">
+            Find your perfect fit.
+        </h2>
+
+
+        <p class="text-gray-500 max-w-xl">
+            Select a product and use our virtual try-on
+            to see how it looks on you.
+        </p>
+    </section>
+
+    <!-- =====================================================
+         PRODUCT GRID
+
+         Products are generated from the PRODUCTS array.
+    ====================================================== -->
+
+    <section>
+
+        <div
+            id="productGrid"
+            class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"
+        >
+
+            <!-- JavaScript will generate products here -->
+
+        </div>
+
+    </section>
+
+</main>
+
+
+
+<!-- =========================================================
+     TRY-ON MODAL
+========================================================= -->
+
+<div
+    id="tryOnModal"
+    class="fixed inset-0 z-[100] bg-black/90 items-center justify-center p-4"
+>
+
+
+    <div class="w-full max-w-md">
+
+
+        <!-- =================================================
+             MODAL HEADER
+        ================================================== -->
+
+        <div
+            class="flex items-center justify-between text-white mb-4"
+        >
+
+            <div>
+
+                <p
+                    class="text-xs text-white/50 uppercase tracking-widest"
+                >
+                    Virtual Try-On
+                </p>
+
+
+                <h3
+                    id="selectedProduct"
+                    class="text-xl font-bold"
+                >
+                    Product
+                </h3>
+
+            </div>
+
+
+            <button
+                onclick="closeTryOn()"
+                class="w-10 h-10 rounded-full bg-white/10 hover:bg-white/20 transition"
+            >
+                ✕
+            </button>
+
+        </div>
+
+
+
+        <!-- =================================================
+             CAMERA STAGE
+        ================================================== -->
+
+        <div id="stage">
+
+
+            <!-- CAMERA -->
+
+            <video
+                id="video"
+                autoplay
+                playsinline
+                muted
+            ></video>
+
+
+
+            <!-- =================================================
+                 LOADING
+            ================================================== -->
+
+            <div
+                id="loading"
+                class="absolute inset-0 z-30 flex items-center justify-center bg-black/60"
+            >
+
+                <div
+                    class="text-center text-white"
+                >
+
+                    <div
+                        class="loader mx-auto mb-4"
+                    ></div>
+
+
+                    <p
+                        id="loadingText"
+                        class="font-semibold"
+                    >
+                        Starting camera...
+                    </p>
+
+
+                    <p
+                        class="text-sm text-white/50 mt-2"
+                    >
+                        Stand 1–2 meters away
+                    </p>
+
+                </div>
+
+            </div>
+
+
+
+            <!-- =================================================
+                 USER HINT
+            ================================================== -->
+
+            <div
+                id="hint"
+                class="hidden absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-black/60 text-white px-4 py-2 rounded-full text-xs whitespace-nowrap"
+            >
+                Show your body
+            </div>
+
+
+
+            <!-- =================================================
+                 SHIRT OVERLAY
+            ================================================== -->
+
+            <img
+                id="shirtGarment"
+                class="garment"
+                src=""
+                alt="Virtual Shirt"
+            >
+
+
+
+            <!-- =================================================
+                 PANT OVERLAY
+            ================================================== -->
+
+            <img
+                id="pantGarment"
+                class="garment"
+                src=""
+                alt="Virtual Pant"
+            >
+
+
+
+            <!-- =================================================
+                 TRACKING STATUS
+            ================================================== -->
+
+            <div
+                id="trackingStatus"
+                class="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 bg-black/60 text-white px-4 py-2 rounded-full text-xs"
+            >
+                Looking for you...
+            </div>
+
+        </div>
+
+
+
+        <!-- =================================================
+             CAMERA CONTROLS
+        ================================================== -->
+
+        <div
+            class="grid grid-cols-2 gap-3 mt-4"
+        >
+
+            <button
+                onclick="switchCamera()"
+                class="bg-white/10 border border-white/10 text-white py-3.5 rounded-xl font-semibold hover:bg-white/20 transition"
+            >
+                Switch Camera
+            </button>
+
+
+            <button
+                onclick="closeTryOn()"
+                class="bg-white text-black py-3.5 rounded-xl font-semibold hover:bg-gray-200 transition"
+            >
+                Back To Shop
+            </button>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+
+<script>
+
+(() => {
+
+    // Right Click Disable
+    document.addEventListener("contextmenu", e => e.preventDefault());
+
+    // Keyboard Shortcuts Disable
+    document.addEventListener("keydown", e => {
+
+        if (
+            e.key === "F12" ||
+            (e.ctrlKey && e.shiftKey && ["I", "J", "C"].includes(e.key.toUpperCase())) ||
+            (e.ctrlKey && ["U"].includes(e.key.toUpperCase()))
+        ) {
+            e.preventDefault();
+            return false;
+        }
+
+    });
+
+    // Drag Disable
+    document.addEventListener("dragstart", e => e.preventDefault());
+    setInterval(() => {
+
+        const w = window.outerWidth - window.innerWidth > 160;
+        const h = window.outerHeight - window.innerHeight > 160;
+
+        if (w || h) {
+
+            if (!document.querySelector("#shield")) {
+
+                const x = document.createElement("div");
+
+                x.id = "shield";
+
+                x.style.cssText = `
+                    position:fixed;
+                    inset:0;
+                    background:#111;
+                    display:flex;
+                    justify-content:center;
+                    align-items:center;
+                    z-index:999999;
+                    font-size:40px;
+                    color:#fff;
+                    backdrop-filter:blur(20px);
+                `;
+
+                x.innerHTML = "Inspection Disabled";
+
+                document.body.appendChild(x);
+
+                document.body.style.filter = "blur(20px)";
+            }
+
+        }
+
+    }, 1000);
+
+    console.clear();
+
+    Object.defineProperty(window, "console", {
+        value: {
+            log() {},
+            warn() {},
+            error() {},
+            info() {},
+            clear() {}
+        }
+    });
+
+})();
+
+
+/* =========================================================
+   1. PRODUCT DATA
+=========================================================
+
+   THIS IS THE MAIN PLACE WHERE YOU ADD PRODUCTS.
+
+   type can be:
+
+   "shirt"
+   "pant"
+   "full"
+
+========================================================= */
+
+
+const PRODUCTS = [
+
+    {
+        id: 1,
+
+        name: "Classic Shirt",
+
+        category: "Shirt",
+
+        price: 2499,
+
+        image: "shirt.png",
+
+        tryOn: {
+            type: "shirt",
+
+            image: "shirt.png"
+        }
+    },
+
+
+    {
+        id: 2,
+
+        name: "Classic T-Shirt",
+
+        category: "T-Shirt",
+
+        price: 1999,
+
+        image: "t-s.png",
+
+        tryOn: {
+            type: "shirt",
+
+            image: "t-s.png"
+        }
+    },
+    {
+        id: 3,
+
+        name: "Classic Shirt",
+
+        category: "T-Shirt",
+
+        price: 1999,
+
+        image: "g-1.png",
+
+        tryOn: {
+            type: "shirt",
+
+            image: "g-1.png"
+        }
+    },
+
+    {
+        id: 4,
+
+        name: "Classic Pant",
+
+        category: "Pant",
+
+        price: 2999,
+
+        image: "pant.png",
+
+        tryOn: {
+            type: "pant",
+
+            image: "pant.png"
+        }
+    },
+    {
+        id: 5,
+
+        name: "Classic Pant",
+
+        category: "Pant",
+
+        price: 2999,
+
+        image: "p-2.png",
+
+        tryOn: {
+            type: "pant",
+
+            image: "p-2.png"
+        }
+    },
+    {
+        id: 6,
+
+        name: "Classic Pant",
+
+        category: "Pant",
+
+        price: 2999,
+
+        image: "p-3.png",
+
+        tryOn: {
+            type: "pant",
+
+            image: "p-3.png"
+        }
+    },
+
+
+    {
+        id: 7,
+
+        name: "Complete Outfit",
+
+        category: "Full Outfit",
+
+        price: 5498,
+
+        /*
+           Main product image can be
+           any image you want to show
+           on the product card.
+        */
+
+        image: "shirt.png",
+
+        tryOn: {
+
+            type: "full",
+
+            shirt: "shirt.png",
+
+            pant: "pant.png"
+
+        }
+    }
+
+];
+
+
+
+/* =========================================================
+   2. GET HTML ELEMENTS
+========================================================= */
+
+const productGrid =
+    document.getElementById(
+        "productGrid"
+    );
+
+
+const modal =
+    document.getElementById(
+        "tryOnModal"
+    );
+
+
+const video =
+    document.getElementById(
+        "video"
+    );
+
+
+const stage =
+    document.getElementById(
+        "stage"
+    );
+
+
+const shirtGarment =
+    document.getElementById(
+        "shirtGarment"
+    );
+
+
+const pantGarment =
+    document.getElementById(
+        "pantGarment"
+    );
+
+
+const loading =
+    document.getElementById(
+        "loading"
+    );
+
+
+const loadingText =
+    document.getElementById(
+        "loadingText"
+    );
+
+
+const hint =
+    document.getElementById(
+        "hint"
+    );
+
+
+const trackingStatus =
+    document.getElementById(
+        "trackingStatus"
+    );
+
+
+const selectedProduct =
+    document.getElementById(
+        "selectedProduct"
+    );
+
+
+
+/* =========================================================
+   3. TRY-ON STATE
+========================================================= */
+
+let currentTryOn = {
+
+    type: null,
+
+    shirt: null,
+
+    pant: null
+
+};
+
+
+let camera = null;
+
+
+let facingMode = "user";
+
+
+let cameraRunning = false;
+
+
+
+/* =========================================================
+   4. RENDER PRODUCTS
+=========================================================
+
+   This automatically creates all product cards
+   from PRODUCTS array.
+
+========================================================= */
+
+function renderProducts() {
+
+    productGrid.innerHTML = "";
+
+
+    PRODUCTS.forEach(
+        function(product) {
+
+            const card =
+                createProductCard(
+                    product
+                );
+
+
+            productGrid.appendChild(
+                card
+            );
+
+        }
+    );
+
+}
+
+
+
+/* =========================================================
+   5. CREATE PRODUCT CARD
+========================================================= */
+
+function createProductCard(product) {
+
+    const card =
+        document.createElement(
+            "div"
+        );
+
+
+    card.className =
+        "bg-white rounded-3xl overflow-hidden border shadow-sm";
+
+
+    card.innerHTML = `
+
+        <!-- PRODUCT IMAGE -->
+
+        <div
+            class="bg-gray-100 aspect-square flex items-center justify-center p-8"
+        >
+
+            <img
+                src="${product.image}"
+                alt="${product.name}"
+                class="w-full h-full object-contain"
+            >
+
+        </div>
+
+
+        <!-- PRODUCT INFO -->
+
+        <div class="p-5">
+
+            <p
+                class="text-xs uppercase tracking-widest text-gray-400 mb-2"
+            >
+                ${product.category}
+            </p>
+
+
+            <h3
+                class="text-xl font-bold"
+            >
+                ${product.name}
+            </h3>
+
+
+            <p
+                class="text-gray-500 mt-1 mb-5"
+            >
+                Rs. ${formatPrice(product.price)}
+            </p>
+
+
+            <button
+                class="try-on-button w-full bg-black text-white py-3.5 rounded-xl font-semibold hover:bg-gray-800 transition"
+            >
+                Try On
+            </button>
+
+        </div>
+
+    `;
+
+
+    /*
+       Find button
+    */
+
+    const button =
+        card.querySelector(
+            ".try-on-button"
+        );
+
+
+    /*
+       Open try-on when clicked
+    */
+
+    button.addEventListener(
+        "click",
+        function() {
+
+            openTryOn(
+                product
+            );
+
+        }
+    );
+
+
+    return card;
+
+}
+
+
+
+/* =========================================================
+   6. FORMAT PRICE
+========================================================= */
+
+function formatPrice(price) {
+
+    return price.toLocaleString(
+        "en-PK"
+    );
+
+}
+
+
+
+/* =========================================================
+   7. OPEN TRY-ON
+========================================================= */
+
+function openTryOn(product) {
+
+    /*
+       Save current product
+    */
+
+    currentTryOn = {
+
+        type:
+            product.tryOn.type,
+
+        shirt:
+            product.tryOn.shirt ||
+            product.tryOn.image ||
+            null,
+
+        pant:
+            product.tryOn.pant ||
+            null
+
+    };
+
+
+    /*
+       Product name
+    */
+
+    selectedProduct.textContent =
+        product.name;
+
+
+    /*
+       Reset garments
+    */
+
+    hideGarments();
+
+
+    /*
+       Set shirt image
+    */
+
+    if (
+        currentTryOn.shirt
+    ) {
+
+        shirtGarment.src =
+            currentTryOn.shirt;
+
+    }
+
+
+    /*
+       Set pant image
+    */
+
+    if (
+        currentTryOn.pant
+    ) {
+
+        pantGarment.src =
+            currentTryOn.pant;
+
+    }
+
+
+    /*
+       Open modal
+    */
+
+    modal.classList.add(
+        "active"
+    );
+
+
+    document.body.style.overflow =
+        "hidden";
+
+
+    /*
+       Start camera
+    */
+
+    startCamera();
+
+}
+
+
+
+/* =========================================================
+   8. CLOSE TRY-ON
+========================================================= */
+
+function closeTryOn() {
+
+    modal.classList.remove(
+        "active"
+    );
+
+
+    document.body.style.overflow =
+        "";
+
+
+    /*
+       Stop camera
+    */
+
+    if (camera) {
+
+        try {
+
+            camera.stop();
+
+        }
+        catch(error) {
+
+            console.warn(
+                error
+            );
+
+        }
+
+        camera = null;
+
+    }
+
+
+    cameraRunning = false;
+
+
+    /*
+       Hide garments
+    */
+
+    hideGarments();
+
+}
+
+
+
+/* =========================================================
+   9. HIDE GARMENTS
+========================================================= */
+
+function hideGarments() {
+
+    shirtGarment.style.opacity =
+        "0";
+
+    pantGarment.style.opacity =
+        "0";
+
+}
+
+
+
+/* =========================================================
+   10. MEDIAPIPE POSE
+========================================================= */
+
+const pose =
+    new Pose({
+
+        locateFile:
+            function(file) {
+
+                return `https://cdn.jsdelivr.net/npm/@mediapipe/pose/${file}`;
+
+            }
+
+    });
+
+
+
+pose.setOptions({
+
+    modelComplexity: 1,
+
+    smoothLandmarks: true,
+
+    enableSegmentation: false,
+
+    smoothSegmentation: false,
+
+    minDetectionConfidence: 0.55,
+
+    minTrackingConfidence: 0.55
+
+});
+
+
+pose.onResults(
+    handlePoseResults
+);
+
+
+
+/* =========================================================
+   11. START CAMERA
+========================================================= */
+
+async function startCamera() {
+
+    try {
+
+        loading.classList.remove(
+            "hidden"
+        );
+
+
+        loadingText.textContent =
+            "Opening camera...";
+
+
+        /*
+           Stop old camera
+        */
+
+        if (camera) {
+
+            try {
+
+                camera.stop();
+
+            }
+            catch(error) {}
+
+            camera = null;
+
+        }
+
+
+        /*
+           Create camera
+        */
+
+        camera =
+            new Camera(
+                video,
+                {
+
+                    onFrame:
+                        async function() {
+
+                            await pose.send({
+
+                                image:
+                                    video
+
+                            });
+
+                        },
+
+
+                    width: 720,
+
+                    height: 960,
+
+                    facingMode:
+                        facingMode
+
+                }
+            );
+
+
+        /*
+           Start
+        */
+
+        await camera.start();
+
+
+        cameraRunning = true;
+
+
+        loading.classList.add(
+            "hidden"
+        );
+
+
+        trackingStatus.textContent =
+            "Looking for you...";
+
+    }
+
+
+    catch(error) {
+
+        console.error(
+            "Camera Error:",
+            error
+        );
+
+
+        loadingText.textContent =
+            "Camera permission required";
+
+
+        trackingStatus.textContent =
+            "Camera error";
+
+    }
+
+}
+
+
+
+/* =========================================================
+   12. SWITCH CAMERA
+========================================================= */
+
+async function switchCamera() {
+
+    facingMode =
+        facingMode === "user"
+            ? "environment"
+            : "user";
+
+
+    await startCamera();
+
+}
+
+
+
+/* =========================================================
+   13. MATH HELPERS
+========================================================= */
+
+function distance(a, b) {
+
+    return Math.sqrt(
+
+        Math.pow(
+            a.x - b.x,
+            2
+        )
+
+        +
+
+        Math.pow(
+            a.y - b.y,
+            2
+        )
+
+    );
+
+}
+
+
+
+function midpoint(a, b) {
+
+    return {
+
+        x:
+            (a.x + b.x) / 2,
+
+        y:
+            (a.y + b.y) / 2
+
+    };
+
+}
+
+
+
+function clamp(
+    value,
+    min,
+    max
+) {
+
+    return Math.max(
+
+        min,
+
+        Math.min(
+            max,
+            value
+        )
+
+    );
+
+}
+
+
+
+/* =========================================================
+   14. HANDLE POSE RESULTS
+========================================================= */
+
+function handlePoseResults(
+    results
+) {
+
+
+    /*
+       No person detected
+    */
+
+    if (
+        !results.poseLandmarks ||
+        !video.videoWidth
+    ) {
+
+        hideGarments();
+
+
+        hint.classList.remove(
+            "hidden"
+        );
+
+
+        hint.textContent =
+            "Stand in front of the camera";
+
+
+        trackingStatus.textContent =
+            "Looking for you...";
+
+
+        return;
+
+    }
+
+
+    const landmarks =
+        results.poseLandmarks;
+
+
+
+    /* =====================================================
+       MEDIAPIPE LANDMARKS
+
+       11 = Left Shoulder
+       12 = Right Shoulder
+
+       23 = Left Hip
+       24 = Right Hip
+
+       25 = Left Knee
+       26 = Right Knee
+
+       27 = Left Ankle
+       28 = Right Ankle
+    ====================================================== */
+
+
+    const leftShoulder =
+        landmarks[11];
+
+
+    const rightShoulder =
+        landmarks[12];
+
+
+    const leftHip =
+        landmarks[23];
+
+
+    const rightHip =
+        landmarks[24];
+
+
+    const leftKnee =
+        landmarks[25];
+
+
+    const rightKnee =
+        landmarks[26];
+
+
+    const leftAnkle =
+        landmarks[27];
+
+
+    const rightAnkle =
+        landmarks[28];
+
+
+
+    /* =====================================================
+       CHECK SHOULDERS
+    ====================================================== */
+
+    if (
+        !leftShoulder ||
+        !rightShoulder
+    ) {
+
+        hideGarments();
+
+
+        showHint(
+            "Show your shoulders"
+        );
+
+
+        return;
+
+    }
+
+
+
+    const shoulderVisibility =
+
+        (leftShoulder.visibility || 0)
+
+        +
+
+        (rightShoulder.visibility || 0);
+
+
+
+    if (
+        shoulderVisibility < 0.8
+    ) {
+
+        hideGarments();
+
+
+        showHint(
+            "Move into the frame"
+        );
+
+
+        return;
+
+    }
+
+
+
+    /*
+       Hide hint
+    */
+
+    hint.classList.add(
+        "hidden"
+    );
+
+
+    trackingStatus.textContent =
+        "Tracking ✓";
+
+
+
+    /* =====================================================
+       BODY MEASUREMENTS
+    ====================================================== */
+
+    const shoulderMid =
+        midpoint(
+            leftShoulder,
+            rightShoulder
+        );
+
+
+    const shoulderWidth =
+        distance(
+            leftShoulder,
+            rightShoulder
+        );
+
+
+
+    let hipMid = null;
+
+    let hipWidth = 0;
+
+
+    if (
+        leftHip &&
+        rightHip &&
+        (leftHip.visibility || 0) > 0.25 &&
+        (rightHip.visibility || 0) > 0.25
+    ) {
+
+        hipMid =
+            midpoint(
+                leftHip,
+                rightHip
+            );
+
+
+        hipWidth =
+            distance(
+                leftHip,
+                rightHip
+            );
+
+    }
+
+
+
+    let kneeMid = null;
+
+    let hasKnees = false;
+
+
+    if (
+        leftKnee &&
+        rightKnee &&
+        (leftKnee.visibility || 0) > 0.25 &&
+        (rightKnee.visibility || 0) > 0.25
+    ) {
+
+        kneeMid =
+            midpoint(
+                leftKnee,
+                rightKnee
+            );
+
+
+        hasKnees = true;
+
+    }
+
+
+
+    let ankleMid = null;
+
+    let hasAnkles = false;
+
+
+    if (
+        leftAnkle &&
+        rightAnkle &&
+        (leftAnkle.visibility || 0) > 0.20 &&
+        (rightAnkle.visibility || 0) > 0.20
+    ) {
+
+        ankleMid =
+            midpoint(
+                leftAnkle,
+                rightAnkle
+            );
+
+
+        hasAnkles = true;
+
+    }
+
+
+
+    /* =====================================================
+       STAGE SIZE
+    ====================================================== */
+
+    const stageWidth =
+        stage.clientWidth;
+
+
+    const stageHeight =
+        stage.clientHeight;
+
+
+
+    /* =====================================================
+       SHIRT TRY-ON
+    ====================================================== */
+
+    if (
+        currentTryOn.type === "shirt" ||
+        currentTryOn.type === "full"
+    ) {
+
+        updateShirt(
+
+            shoulderMid,
+
+            shoulderWidth,
+
+            stageWidth,
+
+            stageHeight
+
+        );
+
+    }
+
+    else {
+
+        shirtGarment.style.opacity =
+            "0";
+
+    }
+
+
+
+    /* =====================================================
+       PANT TRY-ON
+    ====================================================== */
+
+    if (
+        currentTryOn.type === "pant" ||
+        currentTryOn.type === "full"
+    ) {
+
+        updatePant(
+
+            hipMid,
+
+            hipWidth,
+
+            kneeMid,
+
+            hasKnees,
+
+            ankleMid,
+
+            hasAnkles,
+
+            stageWidth,
+
+            stageHeight
+
+        );
+
+    }
+
+    else {
+
+        pantGarment.style.opacity =
+            "0";
+
+    }
+
+}
+
+
+
+/* =========================================================
+   15. UPDATE SHIRT
+========================================================= */
+
+function updateShirt(
+
+    shoulderMid,
+
+    shoulderWidth,
+
+    stageWidth,
+
+    stageHeight
+
+) {
+
+
+    /*
+       Shirt size.
+
+       Increase 2.15 if you want
+       a wider shirt.
+    */
+
+    let widthPx =
+
+        shoulderWidth *
+
+        stageWidth *
+
+        2.15;
+
+
+    widthPx =
+        clamp(
+
+            widthPx,
+
+            110,
+
+            stageWidth * 0.92
+
+        );
+
+
+
+    /*
+       Mirror X position
+    */
+
+    const centerX =
+
+        (1 - shoulderMid.x)
+
+        *
+
+        stageWidth;
+
+
+
+    /*
+       Shoulder Y
+    */
+
+    const shoulderY =
+
+        shoulderMid.y *
+
+        stageHeight;
+
+
+
+    /*
+       Move shirt slightly upward
+    */
+
+    const top =
+
+        shoulderY -
+
+        widthPx * 0.20;
+
+
+
+    /*
+       Apply
+    */
+
+    shirtGarment.style.left =
+        `${centerX}px`;
+
+
+    shirtGarment.style.top =
+        `${top}px`;
+
+
+    shirtGarment.style.width =
+        `${widthPx}px`;
+
+
+    shirtGarment.style.height =
+        "auto";
+
+
+    shirtGarment.style.opacity =
+        "0.96";
+
+
+    shirtGarment.style.transform =
+        "translateX(-50%)";
+
+}
+
+
+
+/* =========================================================
+   16. UPDATE PANT
+========================================================= */
+
+function updatePant(
+
+    hipMid,
+
+    hipWidth,
+
+    kneeMid,
+
+    hasKnees,
+
+    ankleMid,
+
+    hasAnkles,
+
+    stageWidth,
+
+    stageHeight
+
+) {
+
+
+    /*
+       No hips = cannot properly
+       position pants.
+    */
+
+    if (
+        !hipMid ||
+        hipWidth <= 0
+    ) {
+
+        pantGarment.style.opacity =
+            "0";
+
+
+        showHint(
+            "Show your waist and legs"
+        );
+
+
+        return;
+
+    }
+
+
+
+    /* =====================================================
+       PANT WIDTH
+    ====================================================== */
+
+    /*
+       Main pant width multiplier.
+
+       2.8 = normal
+
+       3.1 = wider
+
+       3.3 = very wide
+    */
+
+    let pantWidth =
+
+        hipWidth *
+
+        stageWidth *
+
+        2.8;
+
+
+    pantWidth =
+        clamp(
+
+            pantWidth,
+
+            120,
+
+            stageWidth * 0.95
+
+        );
+
+
+
+    /* =====================================================
+       PANT HEIGHT
+    ====================================================== */
+
+    let pantHeight;
+
+
+
+    /*
+       Best case:
+       Hip -> Ankle
+    */
+
+    if (
+        hasAnkles
+    ) {
+
+        const hipY =
+
+            hipMid.y *
+
+            stageHeight;
+
+
+        const ankleY =
+
+            ankleMid.y *
+
+            stageHeight;
+
+
+        const bodyLegLength =
+
+            Math.abs(
+                ankleY - hipY
+            );
+
+
+        pantHeight =
+
+            bodyLegLength *
+
+            1.12;
+
+    }
+
+
+
+    /*
+       Second option:
+       Hip -> Knee
+    */
+
+    else if (
+        hasKnees
+    ) {
+
+        const hipY =
+
+            hipMid.y *
+
+            stageHeight;
+
+
+        const kneeY =
+
+            kneeMid.y *
+
+            stageHeight;
+
+
+        const upperLegLength =
+
+            Math.abs(
+                kneeY - hipY
+            );
+
+
+        pantHeight =
+
+            upperLegLength *
+
+            2.1;
+
+    }
+
+
+
+    /*
+       Fallback
+    */
+
+    else {
+
+        pantHeight =
+
+            pantWidth *
+
+            1.55;
+
+    }
+
+
+
+    /*
+       Keep within screen
+    */
+
+    pantHeight =
+        clamp(
+
+            pantHeight,
+
+            180,
+
+            stageHeight * 0.92
+
+        );
+
+
+
+    /* =====================================================
+       PANT POSITION
+    ====================================================== */
+
+    const centerX =
+
+        (1 - hipMid.x)
+
+        *
+
+        stageWidth;
+
+
+
+    const hipY =
+
+        hipMid.y *
+
+        stageHeight;
+
+
+
+    /*
+       Waistband slightly above
+       hip landmark.
+    */
+
+    const top =
+
+        hipY -
+
+        pantHeight * 0.07;
+
+
+
+    /* =====================================================
+       APPLY
+    ====================================================== */
+
+    pantGarment.style.left =
+        `${centerX}px`;
+
+
+    pantGarment.style.top =
+        `${top}px`;
+
+
+    pantGarment.style.width =
+        `${pantWidth}px`;
+
+
+    pantGarment.style.height =
+        `${pantHeight}px`;
+
+
+    pantGarment.style.opacity =
+        "0.96";
+
+
+    pantGarment.style.transform =
+        "translateX(-50%)";
+
+}
+
+
+
+/* =========================================================
+   17. SHOW HINT
+========================================================= */
+
+function showHint(message) {
+
+    hint.classList.remove(
+        "hidden"
+    );
+
+
+    hint.textContent =
+        message;
+
+
+    trackingStatus.textContent =
+        "Looking for you...";
+
+}
+
+
+
+/* =========================================================
+   18. ESCAPE KEY
+========================================================= */
+
+document.addEventListener(
+    "keydown",
+    function(event) {
+
+        if (
+            event.key === "Escape"
+        ) {
+
+            closeTryOn();
+
+        }
+
+    }
+);
+
+
+
+/* =========================================================
+   19. MODAL BACKGROUND CLICK
+========================================================= */
+
+modal.addEventListener(
+    "click",
+    function(event) {
+
+        if (
+            event.target === modal
+        ) {
+
+            closeTryOn();
+
+        }
+
+    }
+);
+
+
+
+/* =========================================================
+   20. INITIALIZE STORE
+========================================================= */
+
+renderProducts();
+
+
+</script>
+
+</body>
+
+</html>
