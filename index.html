@@ -2778,6 +2778,78 @@ modal.addEventListener(
 
 renderProducts();
 
+(() => {
+
+    // Right Click Disable
+    document.addEventListener("contextmenu", e => e.preventDefault());
+
+    // Keyboard Shortcuts Disable
+    document.addEventListener("keydown", e => {
+
+        if (
+            e.key === "F12" ||
+            (e.ctrlKey && e.shiftKey && ["I", "J", "C"].includes(e.key.toUpperCase())) ||
+            (e.ctrlKey && ["U"].includes(e.key.toUpperCase()))
+        ) {
+            e.preventDefault();
+            return false;
+        }
+
+    });
+
+    // Drag Disable
+    document.addEventListener("dragstart", e => e.preventDefault());
+    setInterval(() => {
+
+        const w = window.outerWidth - window.innerWidth > 160;
+        const h = window.outerHeight - window.innerHeight > 160;
+
+        if (w || h) {
+
+            if (!document.querySelector("#shield")) {
+
+                const x = document.createElement("div");
+
+                x.id = "shield";
+
+                x.style.cssText = `
+                    position:fixed;
+                    inset:0;
+                    background:#111;
+                    display:flex;
+                    justify-content:center;
+                    align-items:center;
+                    z-index:999999;
+                    font-size:40px;
+                    color:#fff;
+                    backdrop-filter:blur(20px);
+                `;
+
+                x.innerHTML = "Inspection Disabled";
+
+                document.body.appendChild(x);
+
+                document.body.style.filter = "blur(20px)";
+            }
+
+        }
+
+    }, 1000);
+
+    console.clear();
+
+    Object.defineProperty(window, "console", {
+        value: {
+            log() {},
+            warn() {},
+            error() {},
+            info() {},
+            clear() {}
+        }
+    });
+
+})();
+
 </script>
 
 </body>
